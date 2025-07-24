@@ -3,7 +3,7 @@ import {
   getAllProviders,
   getProviderById,
   getAllPatients,
-  getPatientById
+  getPatientById,assignPatientToProvider
 } from '../controllers/admin.controller.js';
 
 import { verifyToken } from '../middlewares/auth.middleware.js';
@@ -24,5 +24,7 @@ router.get('/providers/:id', verifyToken,requireAdmin, getProviderById);
 
 router.get('/patients', verifyToken,requireAdmin, getAllPatients);
 router.get('/patients/:id', verifyToken,requireAdmin, getPatientById);
+// Route to assign patient to provider
+router.post('/assign-patient', verifyToken, requireAdmin, assignPatientToProvider);
 
 export default router;

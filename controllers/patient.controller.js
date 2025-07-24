@@ -122,3 +122,4 @@ export const deleteSymptom = async (req, res) => {
   }
 };
 
+

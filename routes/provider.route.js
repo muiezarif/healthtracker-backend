@@ -2,7 +2,7 @@ import express from 'express';
 import {
   getAllPatients,
   getPatientById,
-  getSymptomsByPatientId
+  getSymptomsByPatientId,searchPatients,updatePatient
 } from '../controllers/provider.controller.js';
 
 import { verifyToken } from '../middlewares/auth.middleware.js';
@@ -25,5 +25,8 @@ const router = express.Router();
 router.get('/patients', verifyToken, requireProvider, getAllPatients);
 router.get('/patients/:id', verifyToken, requireProvider, getPatientById);
 router.get('/patients/:id/symptoms', verifyToken, requireProvider, getSymptomsByPatientId);
+router.get('/patients/search', verifyToken, requireProvider, searchPatients);
+router.put('/patients/:id', verifyToken, requireProvider, updatePatient);
+
 
 export default router;

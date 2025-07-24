@@ -52,3 +52,95 @@ export const getSymptomsByPatientId = async (req, res) => {
     sendResponse(res, 500, "Failed to fetch symptoms", {}, error.message);
   }
 };
+
+// 🔎 Search patients by name
+export const searchPatients = async (req, res) => {
+  try {
+    const { name } = req.query;
+
+    if (!name || name.trim() === '') {
+      return sendResponse(res, 400, "Search query is required", {}, "Name parameter is required");
+    }
+
+    // Case-insensitive search using regex
+    const patients = await Patient.find({
+      name: { $regex: name.trim(), $options: 'i' }
+    }).select('-password');
+
+    if (!patients || patients.length === 0) {
+      return sendResponse(res, 404, "No patients found matching the search criteria", [], "No matching patients");
+    }
+
+    sendResponse(res, 200, `Found ${patients.length} patient(s) matching "${name}"`, patients);
+  } catch (error) {
+    sendResponse(res, 500, "Failed to search patients", {}, error.message);
+  }
+};
+
+// ✏️ Update patient details
+export const updatePatient = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, age, sex,phone_number,address } = req.body;
+
+    // Check if patient exists
+    const existingPatient = await Patient.findById(id);
+    if (!existingPatient) {
+      return sendResponse(res, 404, "Patient not found", {}, "Patient not found");
+    }
+
+    // Check if email is being changed and if it's already taken by another patient
+    if (email && email !== existingPatient.email) {
+      const emailExists = await Patient.findOne({ 
+        email: email, 
+        _id: { $ne: id } 
+      });
+      
+      if (emailExists) {
+        return sendResponse(res, 400, "Email already exists", {}, "Another patient is already using this email");
+      }
+    }
+
+    // Prepare update object with only provided fields
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (age !== undefined) updateData.age = age;
+    if (sex !== undefined) updateData.sex = sex;
+    updateData.phone_number = phone_number;
+    updateData.address = address;
+
+    // Validate required fields if provided
+    if (name !== undefined && (!name || name.trim() === '')) {
+      return sendResponse(res, 400, "Name is required", {}, "Name cannot be empty");
+    }
+    
+    if (email !== undefined && (!email || email.trim() === '')) {
+      return sendResponse(res, 400, "Email is required", {}, "Email cannot be empty");
+    }
+    
+    if (age !== undefined && (age === null || age < 0)) {
+      return sendResponse(res, 400, "Valid age is required", {}, "Age must be a positive number");
+    }
+
+    // Update patient
+    const updatedPatient = await Patient.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).populate('providers', 'name email').select('-password');
+
+    sendResponse(res, 200, "Patient details updated successfully", updatedPatient);
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return sendResponse(res, 400, "Validation error", {}, validationErrors.join(', '));
+    }
+    
+    if (error.code === 11000) {
+      return sendResponse(res, 400, "Email already exists", {}, "This email is already registered");
+    }
+    
+    sendResponse(res, 500, "Failed to update patient details", {}, error.message);
+  }
+};
