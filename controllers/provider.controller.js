@@ -1,5 +1,6 @@
 import Patient from '../models/patient.model.js';
 import Symptom from '../models/symptom.model.js';
+import bcrypt from 'bcryptjs';
 
 // ✅ Helper: Standard Response
 const sendResponse = (res, status, message, result = {}, error = "") => {
@@ -9,6 +10,61 @@ const sendResponse = (res, status, message, result = {}, error = "") => {
     result,
     error
   });
+};
+
+// 👨‍⚕️ Create a new patient and attach to provider
+export const createPatient = async (req, res) => {
+  try {
+    const providerId = req.user.id;
+    const { name, email, password, age, sex, phone_number, address } = req.body;
+
+    // 🔎 Validate required fields
+    if (!name || !email || !password) {
+      return sendResponse(res, 400, "Name, email, and password are required", {}, "Missing fields");
+    }
+
+    // 📧 Check for duplicate patient email
+    const existingPatient = await Patient.findOne({ email });
+    if (existingPatient) {
+      return sendResponse(res, 409, "Email already exists", {}, "Patient already registered");
+    }
+
+    // 🔐 Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 🏥 Create patient with linked provider
+    const newPatient = new Patient({
+      name,
+      email,
+      password: hashedPassword,
+      age,
+      sex,
+      phone_number,
+      address,
+      providers: [providerId]
+    });
+
+    await newPatient.save();
+
+    // 🔗 Add patient to provider's patient list
+    await Provider.findByIdAndUpdate(providerId, {
+      $addToSet: { patients: newPatient._id }
+    });
+
+    // ✅ Response
+    sendResponse(res, 201, "Patient created and linked to provider successfully", {
+      patient: {
+        id: newPatient._id,
+        name: newPatient.name,
+        email: newPatient.email,
+        age: newPatient.age,
+        sex: newPatient.sex
+      }
+    });
+
+  } catch (error) {
+    sendResponse(res, 500, "Failed to create patient", {}, error.message);
+  }
 };
 
 // 📄 Get all patients
