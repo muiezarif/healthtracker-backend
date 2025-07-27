@@ -1,4 +1,5 @@
 import Patient from '../models/patient.model.js';
+import Provider from '../models/provider.model.js';
 import Symptom from '../models/symptom.model.js';
 import bcrypt from 'bcryptjs';
 
@@ -17,7 +18,8 @@ export const createPatient = async (req, res) => {
   try {
     const providerId = req.user.id;
     const { name, email, password, age, sex, phone_number, address } = req.body;
-
+    console.log("Creating patient for provider:", providerId);
+    console.log("Patient data:", req.body);
     // 🔎 Validate required fields
     if (!name || !email || !password) {
       return sendResponse(res, 400, "Name, email, and password are required", {}, "Missing fields");
@@ -63,6 +65,7 @@ export const createPatient = async (req, res) => {
     });
 
   } catch (error) {
+    console.error("Error creating patient:", error);
     sendResponse(res, 500, "Failed to create patient", {}, error.message);
   }
 };
