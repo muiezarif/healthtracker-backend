@@ -70,11 +70,21 @@ export const createPatient = async (req, res) => {
   }
 };
 
-// 📄 Get all patients
 export const getAllPatients = async (req, res) => {
   try {
-    const patients = await Patient.find().select('-password');
-    sendResponse(res, 200, "All patients fetched successfully", patients);
+    const providerId = req.user.id;
+
+    const provider = await Provider.findById(providerId)
+      .populate({
+        path: 'patients',
+        select: '-password'
+      });
+
+    if (!provider) {
+      return sendResponse(res, 404, "Provider not found", {}, "Invalid provider ID");
+    }
+
+    sendResponse(res, 200, "Patients linked to provider fetched successfully", provider.patients);
   } catch (error) {
     sendResponse(res, 500, "Failed to fetch patients", {}, error.message);
   }
