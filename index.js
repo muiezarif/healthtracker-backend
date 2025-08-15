@@ -217,90 +217,90 @@ app.get("/", (req, res) => {
 });
 
 // Token endpoint for OpenAI Realtime API
-app.get("/api/token", async (req, res) => {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OpenAI API key not configured" });
-    }
+// app.get("/api/token", async (req, res) => {
+//   try {
+//     if (!process.env.OPENAI_API_KEY) {
+//       return res.status(500).json({ error: "OpenAI API key not configured" });
+//     }
 
-    const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-realtime-preview-2024-12-17",
-        voice: "alloy",
-        instructions: `You are a clinical intake assistant helping a clinician collect a concise, structured symptom entry.
-Ask exactly these five questions in order, one at a time (wait for the patient's answer before the next):
-1) “Is your symptom physical, mental, or emotional?”
-2) “What symptom are you experiencing?”
-3) “On a scale from 1 to 10, how severe is it right now?”
-4) “Please describe what you’re feeling in more detail.”
-5) “Any additional notes or context (triggers, timing, other details)?”
+//     const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+//       method: "POST",
+//       headers: {
+//         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify({
+//         model: "gpt-4o-realtime-preview-2024-12-17",
+//         voice: "alloy",
+//         instructions: `You are a clinical intake assistant helping a clinician collect a concise, structured symptom entry.
+// Ask exactly these five questions in order, one at a time (wait for the patient's answer before the next):
+// 1) “Is your symptom physical, mental, or emotional?”
+// 2) “What symptom are you experiencing?”
+// 3) “On a scale from 1 to 10, how severe is it right now?”
+// 4) “Please describe what you’re feeling in more detail.”
+// 5) “Any additional notes or context (triggers, timing, other details)?”
 
-Be brief, empathetic, and do not ask extra questions.`,
-        input_audio_transcription: { model: "whisper-1" },
-        turn_detection: {
-          type: "server_vad",
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 500,
-        },
-        temperature: 0.7,
-        max_response_output_tokens: 2048,
-      }),
-    });
+// Be brief, empathetic, and do not ask extra questions.`,
+//         input_audio_transcription: { model: "whisper-1" },
+//         turn_detection: {
+//           type: "server_vad",
+//           threshold: 0.5,
+//           prefix_padding_ms: 300,
+//           silence_duration_ms: 500,
+//         },
+//         temperature: 0.7,
+//         max_response_output_tokens: 2048,
+//       }),
+//     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI API error:", errorText);
-      return res.status(response.status).json({
-        error: "Failed to create session",
-        details: errorText,
-      });
-    }
+//     if (!response.ok) {
+//       const errorText = await response.text();
+//       console.error("OpenAI API error:", errorText);
+//       return res.status(response.status).json({
+//         error: "Failed to create session",
+//         details: errorText,
+//       });
+//     }
 
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    console.error("Token generation error:", error);
-    res.status(500).json({ error: "Failed to generate token" });
-  }
-});
+//     const data = await response.json();
+//     res.json(data);
+//   } catch (error) {
+//     console.error("Token generation error:", error);
+//     res.status(500).json({ error: "Failed to generate token" });
+//   }
+// });
 
-// Get session data endpoint
-app.get("/api/sessions/:sessionId", (req, res) => {
-  const session = activeSessions.get(req.params.sessionId);
-  if (session) {
-    res.json({
-      sessionId: req.params.sessionId,
-      currentQuestion: session.currentQuestionIndex,
-      isComplete: session.isComplete,
-      patientData: session.patientData,
-      currentQuestionText: session.getCurrentQuestion(),
-    });
-  } else {
-    res.status(404).json({ error: "Session not found" });
-  }
-});
+// // Get session data endpoint
+// app.get("/api/sessions/:sessionId", (req, res) => {
+//   const session = activeSessions.get(req.params.sessionId);
+//   if (session) {
+//     res.json({
+//       sessionId: req.params.sessionId,
+//       currentQuestion: session.currentQuestionIndex,
+//       isComplete: session.isComplete,
+//       patientData: session.patientData,
+//       currentQuestionText: session.getCurrentQuestion(),
+//     });
+//   } else {
+//     res.status(404).json({ error: "Session not found" });
+//   }
+// });
 
-// Save session data endpoint
-app.post("/api/sessions/:sessionId/save", (req, res) => {
-  const session = activeSessions.get(req.params.sessionId);
-  if (session && session.isComplete) {
-    console.log("Saving patient data:", session.patientData);
+// // Save session data endpoint
+// app.post("/api/sessions/:sessionId/save", (req, res) => {
+//   const session = activeSessions.get(req.params.sessionId);
+//   if (session && session.isComplete) {
+//     console.log("Saving patient data:", session.patientData);
 
-    res.json({
-      success: true,
-      message: "Patient symptoms recorded successfully",
-      data: session.patientData,
-    });
-  } else {
-    res.status(400).json({ error: "Session not complete or not found" });
-  }
-});
+//     res.json({
+//       success: true,
+//       message: "Patient symptoms recorded successfully",
+//       data: session.patientData,
+//     });
+//   } else {
+//     res.status(400).json({ error: "Session not complete or not found" });
+//   }
+// });
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -312,10 +312,10 @@ app.get("/api/health", (req, res) => {
 });
 
 // Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/patient", patientRoutes);
-app.use("/api/provider", providerRoutes);
+// app.use("/api/auth", authRoutes);
+// app.use("/api/admin", adminRoutes);
+// app.use("/api/patient", patientRoutes);
+// app.use("/api/provider", providerRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {
