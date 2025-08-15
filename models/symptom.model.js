@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 const symptomSchema = new mongoose.Schema({
   symptom_type: { type: String, required: true },
+  symptom: { type: String },
   description: { type: String },
   severity_level: { 
     type: Number, 
