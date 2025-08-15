@@ -59,143 +59,143 @@ const SYMPTOM_QUESTIONS = [
   "Any additional notes or context (triggers, timing, other details) you’d like to add?",
 ];
 
-class SymptomSession {
-  constructor(sessionId) {
-    this.sessionId = sessionId;
-    this.currentQuestionIndex = 0;
-    this.patientData = {
-      symptom_type: "", // step 1
-      symptom: "", // step 2
-      severity_level: "", // step 3 (number 1-10)
-      description: "", // step 4
-      additional_notes: "", // step 5
-    };
-    this.isComplete = false;
-  }
+// class SymptomSession {
+//   constructor(sessionId) {
+//     this.sessionId = sessionId;
+//     this.currentQuestionIndex = 0;
+//     this.patientData = {
+//       symptom_type: "", // step 1
+//       symptom: "", // step 2
+//       severity_level: "", // step 3 (number 1-10)
+//       description: "", // step 4
+//       additional_notes: "", // step 5
+//     };
+//     this.isComplete = false;
+//   }
 
-  getCurrentQuestion() {
-    if (this.currentQuestionIndex < SYMPTOM_QUESTIONS.length) {
-      return SYMPTOM_QUESTIONS[this.currentQuestionIndex];
-    }
-    return "Thanks! I’ve recorded your answers.";
-  }
+//   getCurrentQuestion() {
+//     if (this.currentQuestionIndex < SYMPTOM_QUESTIONS.length) {
+//       return SYMPTOM_QUESTIONS[this.currentQuestionIndex];
+//     }
+//     return "Thanks! I’ve recorded your answers.";
+//   }
 
-  // Map each step’s response into the schema fields
-  recordResponse(response) {
-    const fieldMapping = [
-      "symptom_type", // 0
-      "symptom", // 1
-      "severity_level", // 2
-      "description", // 3
-      "additional_notes", // 4
-    ];
+//   // Map each step’s response into the schema fields
+//   recordResponse(response) {
+//     const fieldMapping = [
+//       "symptom_type", // 0
+//       "symptom", // 1
+//       "severity_level", // 2
+//       "description", // 3
+//       "additional_notes", // 4
+//     ];
 
-    // mild normalization for step 1 + step 3
-    if (this.currentQuestionIndex === 0) {
-      const v = String(response || "").toLowerCase();
-      if (v.includes("phys")) response = "physical";
-      else if (v.includes("ment")) response = "mental";
-      else if (v.includes("emo")) response = "emotional";
-    }
-    if (this.currentQuestionIndex === 2) {
-      // pull the first number 1-10 mentioned
-      const m = String(response).match(/\b(10|[1-9])\b/);
-      response = m ? Number(m[1]) : "";
-    }
+//     // mild normalization for step 1 + step 3
+//     if (this.currentQuestionIndex === 0) {
+//       const v = String(response || "").toLowerCase();
+//       if (v.includes("phys")) response = "physical";
+//       else if (v.includes("ment")) response = "mental";
+//       else if (v.includes("emo")) response = "emotional";
+//     }
+//     if (this.currentQuestionIndex === 2) {
+//       // pull the first number 1-10 mentioned
+//       const m = String(response).match(/\b(10|[1-9])\b/);
+//       response = m ? Number(m[1]) : "";
+//     }
 
-    if (this.currentQuestionIndex < fieldMapping.length) {
-      this.patientData[fieldMapping[this.currentQuestionIndex]] = response;
-    }
+//     if (this.currentQuestionIndex < fieldMapping.length) {
+//       this.patientData[fieldMapping[this.currentQuestionIndex]] = response;
+//     }
 
-    this.currentQuestionIndex++;
-    if (this.currentQuestionIndex >= SYMPTOM_QUESTIONS.length) {
-      this.isComplete = true;
-    }
-  }
+//     this.currentQuestionIndex++;
+//     if (this.currentQuestionIndex >= SYMPTOM_QUESTIONS.length) {
+//       this.isComplete = true;
+//     }
+//   }
 
-  getNextQuestion() {
-    if (this.isComplete) {
-      return "Thank you — your symptom information has been recorded for the care team.";
-    }
-    return this.getCurrentQuestion();
-  }
-}
+//   getNextQuestion() {
+//     if (this.isComplete) {
+//       return "Thank you — your symptom information has been recorded for the care team.";
+//     }
+//     return this.getCurrentQuestion();
+//   }
+// }
 
 // Handle WebSocket connections for session management
-wss.on("connection", (ws) => {
-  console.log("Client connected");
-  const sessionId = Date.now().toString();
-  const symptomSession = new SymptomSession(sessionId);
-  activeSessions.set(sessionId, symptomSession);
+// wss.on("connection", (ws) => {
+//   console.log("Client connected");
+//   const sessionId = Date.now().toString();
+//   const symptomSession = new SymptomSession(sessionId);
+//   activeSessions.set(sessionId, symptomSession);
 
-  ws.on("message", (data) => {
-    try {
-      const message = JSON.parse(data.toString());
+//   ws.on("message", (data) => {
+//     try {
+//       const message = JSON.parse(data.toString());
 
-      switch (message.type) {
-        case "start_session":
-          ws.send(
-            JSON.stringify({
-              type: "session_ready",
-              sessionId: sessionId,
-              message:
-                "Session started. Please use the /token endpoint to get your ephemeral token.",
-            })
-          );
-          break;
+//       switch (message.type) {
+//         case "start_session":
+//           ws.send(
+//             JSON.stringify({
+//               type: "session_ready",
+//               sessionId: sessionId,
+//               message:
+//                 "Session started. Please use the /token endpoint to get your ephemeral token.",
+//             })
+//           );
+//           break;
 
-        case "record_response":
-          symptomSession.recordResponse(message.response);
+//         case "record_response":
+//           symptomSession.recordResponse(message.response);
 
-          if (symptomSession.isComplete) {
-            ws.send(
-              JSON.stringify({
-                type: "session_complete",
-                data: symptomSession.patientData,
-              })
-            );
-          } else {
-            ws.send(
-              JSON.stringify({
-                type: "next_question",
-                question: symptomSession.getNextQuestion(),
-                questionIndex: symptomSession.currentQuestionIndex,
-              })
-            );
-          }
-          break;
+//           if (symptomSession.isComplete) {
+//             ws.send(
+//               JSON.stringify({
+//                 type: "session_complete",
+//                 data: symptomSession.patientData,
+//               })
+//             );
+//           } else {
+//             ws.send(
+//               JSON.stringify({
+//                 type: "next_question",
+//                 question: symptomSession.getNextQuestion(),
+//                 questionIndex: symptomSession.currentQuestionIndex,
+//               })
+//             );
+//           }
+//           break;
 
-        case "get_current_question":
-          ws.send(
-            JSON.stringify({
-              type: "current_question",
-              question: symptomSession.getCurrentQuestion(),
-              questionIndex: symptomSession.currentQuestionIndex,
-              isComplete: symptomSession.isComplete,
-            })
-          );
-          break;
-      }
-    } catch (error) {
-      console.error("Error handling WebSocket message:", error);
-      ws.send(
-        JSON.stringify({
-          type: "error",
-          message: "Failed to process message",
-        })
-      );
-    }
-  });
+//         case "get_current_question":
+//           ws.send(
+//             JSON.stringify({
+//               type: "current_question",
+//               question: symptomSession.getCurrentQuestion(),
+//               questionIndex: symptomSession.currentQuestionIndex,
+//               isComplete: symptomSession.isComplete,
+//             })
+//           );
+//           break;
+//       }
+//     } catch (error) {
+//       console.error("Error handling WebSocket message:", error);
+//       ws.send(
+//         JSON.stringify({
+//           type: "error",
+//           message: "Failed to process message",
+//         })
+//       );
+//     }
+//   });
 
-  ws.on("close", () => {
-    console.log("Client disconnected");
-    activeSessions.delete(sessionId);
-  });
+//   ws.on("close", () => {
+//     console.log("Client disconnected");
+//     activeSessions.delete(sessionId);
+//   });
 
-  ws.on("error", (error) => {
-    console.error("WebSocket error:", error);
-  });
-});
+//   ws.on("error", (error) => {
+//     console.error("WebSocket error:", error);
+//   });
+// });
 
 // --- DB Connection ---
 const db_connect = async () => {
