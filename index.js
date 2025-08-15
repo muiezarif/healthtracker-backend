@@ -15,6 +15,10 @@ import { createServer } from 'http';
 const app = express();
 dotenv.config();
 const server = createServer(app);
+app.use(cors({
+  origin: true, // Allow all origins in development
+  credentials: true
+}));
 
 // WebSocket server for handling real-time connections
 const wss = new WebSocketServer({ server });
@@ -170,10 +174,7 @@ const db_connect = async () => {
 }
 
 // Middlewares
-app.use(cors({
-  origin: true, // Allow all origins in development
-  credentials: true
-}));
+
 app.use(cookieParser())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }));
