@@ -17,37 +17,16 @@ dotenv.config();
 const app = express();
 const server = createServer(app);
 
-// If behind Nginx/Cloud (very common), this allows secure cookies to be set correctly
-app.set("trust proxy", 1);
 
-/**
- * CORS — explicit allowlist required when credentials: true
- * Add localhost for dev if you need it.
- */
-const allowedOrigins = [
-  "https://healthtracker-front.vercel.app",
-  "http://localhost:3000",
-];
 
-const corsOptions = {
-  origin(origin, cb) {
-    // allow same-origin/server-to-server (no Origin) and allowlisted sites
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(new Error("Not allowed by CORS"));
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  exposedHeaders: ["Set-Cookie"],
-  optionsSuccessStatus: 204,
-};
-
-app.use(cors(corsOptions));
+app.use(cors({
+  origin: true, // Allow all origins in development
+  credentials: true
+}));
 // Make sure preflights are answered for every route
-app.options("*", cors(corsOptions));
 
 // --- WebSocket server for handling real-time connections ---
-const wss = new WebSocketServer({ server });
+// const wss = new WebSocketServer({ server });
 const activeSessions = new Map();
 
 // Symptom gathering questions and session management
