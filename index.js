@@ -291,10 +291,10 @@ app.get("/api/health", (req, res) => {
 });
 
 // Routes
-// app.use("/api/auth", authRoutes);
-// app.use("/api/admin", adminRoutes);
-// app.use("/api/patient", patientRoutes);
-// app.use("/api/provider", providerRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/patient", patientRoutes);
+app.use("/api/provider", providerRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {
