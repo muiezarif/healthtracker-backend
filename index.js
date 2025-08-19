@@ -20,13 +20,13 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const activeSessions = new Map();
 
-// Symptom gathering questions and session management
+// (Legacy) Symptom Qs used by the simple WS flow if you still use it somewhere.
+// NOTE: We no longer ask for "type". The agent will infer it from the symptom.
 const SYMPTOM_QUESTIONS = [
-  "To start, is your symptom physical, mental, or emotional?",
-  "What is the symptom you’re experiencing?",
+  "What symptom are you experiencing?",
   "On a scale of 1 to 10, how severe is it right now?",
-  "Please describe what you’re feeling in more detail.",
-  "Any additional notes or context (triggers, timing, other details) you’d like to add?"
+  "Please describe what you're feeling in more detail.",
+  "Any additional notes or context (triggers, timing, other details) you'd like to add?"
 ];
 
 class SymptomSession {
@@ -34,47 +34,49 @@ class SymptomSession {
     this.sessionId = sessionId;
     this.currentQuestionIndex = 0;
     this.patientData = {
-      symptom_type: '',    // step 1
-      symptom: '',         // step 2
-      severity_level: '',  // step 3
-      description: '',     // step 4
-      additional_notes: '' // step 5
+      symptom_type: '',
+      symptom: '',
+      severity_level: '',
+      description: '',
+      additional_notes: ''
     };
     this.isComplete = false;
+    this.peerConnection = null;
+    this.dataChannel = null;
   }
 
   getCurrentQuestion() {
     if (this.currentQuestionIndex < SYMPTOM_QUESTIONS.length) {
       return SYMPTOM_QUESTIONS[this.currentQuestionIndex];
     }
-    return "Thanks! I’ve recorded your answers.";
+    return "Thanks, I have everything I need for now.";
   }
 
-  // Map each step’s response into the schema fields
   recordResponse(response) {
+    // New order: 0:symptom, 1:severity, 2:description, 3:additional_notes
     const fieldMapping = [
-      'symptom_type',     // 0
-      'symptom',          // 1
-      'severity_level',   // 2
-      'description',      // 3
-      'additional_notes'  // 4
+      'symptom', 'severity_level', 'description', 'additional_notes'
     ];
 
-    // mild normalization for step 1 + step 3
-    if (this.currentQuestionIndex === 0) {
-      const v = String(response || '').toLowerCase();
-      if (v.includes('phys')) response = 'physical';
-      else if (v.includes('ment')) response = 'mental';
-      else if (v.includes('emo')) response = 'emotional';
-    }
-    if (this.currentQuestionIndex === 2) {
-      // pull the first number 1-10 mentioned
+    let val = response;
+
+    if (this.currentQuestionIndex === 1) {
+      // severity
       const m = String(response).match(/\b(10|[1-9])\b/);
-      response = m ? Number(m[1]) : '';
+      val = m ? Number(m[1]) : '';
     }
 
     if (this.currentQuestionIndex < fieldMapping.length) {
-      this.patientData[fieldMapping[this.currentQuestionIndex]] = response;
+      this.patientData[fieldMapping[this.currentQuestionIndex]] = val;
+    }
+
+    // Try a coarse categorization on the server too (optional; frontend also does this)
+    if (this.currentQuestionIndex === 0 || this.currentQuestionIndex === 2) {
+      const cat = categorizeSymptomServer(
+        this.patientData.symptom || '',
+        (this.patientData.description || '') + ' ' + (response || '')
+      );
+      if (cat) this.patientData.symptom_type = cat;
     }
 
     this.currentQuestionIndex++;
@@ -91,7 +93,21 @@ class SymptomSession {
   }
 }
 
-// Handle WebSocket connections for session management
+// simple keyword categorizer for server (frontend has its own, richer one)
+function categorizeSymptomServer(symptomText, description) {
+  const text = `${symptomText} ${description}`.toLowerCase();
+  const physicalKeys = ['pain', 'ache', 'fever', 'cough', 'nausea', 'vomit', 'dizziness', 'rash', 'injury', 'cramp', 'chest', 'breath', 'headache', 'throat', 'stomach', 'diarrhea', 'fatigue', 'swelling', 'back', 'arm', 'leg', 'ear', 'nose', 'flu', 'cold'];
+  const mentalKeys = ['focus', 'memory', 'concentrat', 'insomnia', 'sleep', 'adhd', 'brain fog', 'confus', 'hallucin', 'delusion', 'cognitive'];
+  const emotionalKeys = ['anxiety', 'anxious', 'depress', 'sad', 'mood', 'anger', 'irritab', 'stress', 'panic', 'fear', 'lonely'];
+
+  const hits = (keys) => keys.some(k => text.includes(k));
+  if (hits(emotionalKeys)) return 'emotional';
+  if (hits(mentalKeys)) return 'mental';
+  if (hits(physicalKeys)) return 'physical';
+  return '';
+}
+
+// Handle WebSocket connections (optional legacy pathway)
 wss.on('connection', (ws) => {
   console.log('Client connected');
   let sessionId = Date.now().toString();
@@ -101,24 +117,19 @@ wss.on('connection', (ws) => {
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
-
       switch (message.type) {
         case 'start_session':
           ws.send(JSON.stringify({
             type: 'session_ready',
-            sessionId: sessionId,
-            message: 'Session started. Please use the /token endpoint to get your ephemeral token.'
+            sessionId,
+            message: 'Session started. Use /api/token to get your ephemeral token for the Realtime client.'
           }));
           break;
 
         case 'record_response':
           symptomSession.recordResponse(message.response);
-
           if (symptomSession.isComplete) {
-            ws.send(JSON.stringify({
-              type: 'session_complete',
-              data: symptomSession.patientData
-            }));
+            ws.send(JSON.stringify({ type: 'session_complete', data: symptomSession.patientData }));
           } else {
             ws.send(JSON.stringify({
               type: 'next_question',
@@ -139,10 +150,7 @@ wss.on('connection', (ws) => {
       }
     } catch (error) {
       console.error('Error handling WebSocket message:', error);
-      ws.send(JSON.stringify({
-        type: 'error',
-        message: 'Failed to process message'
-      }));
+      ws.send(JSON.stringify({ type: 'error', message: 'Failed to process message' }));
     }
   });
 
@@ -156,9 +164,6 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Token endpoint for OpenAI Realtime API (similar to the OpenAI example)
-
-
 // DB Connection
 const db_connect = async () => {
   try {
@@ -170,18 +175,15 @@ const db_connect = async () => {
 }
 
 // Middlewares
-app.use(cors({
-  origin: true, // Allow all origins in development
-  credentials: true
-}));
+app.use(cors({ origin: true, credentials: true }));
 app.use(cookieParser())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/", (req, res) => {
-  res.send("Health Tracker API - Running")
-})
+app.get("/", (req, res) => res.send("Health Tracker API - Running"));
 
+// Realtime session token — conversational instructions, no “type” question.
+// The assistant will infer the category from the symptom/description.
 app.get("/api/token", async (req, res) => {
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -196,27 +198,34 @@ app.get("/api/token", async (req, res) => {
       },
       body: JSON.stringify({
         model: "gpt-4o-realtime-preview-2024-12-17",
+        modalities: ["text", "audio"],
         voice: "alloy",
-        instructions: `You are a clinical intake assistant helping a clinician collect a concise, structured symptom entry.
-Ask exactly these five questions in order, one at a time (wait for the patient's answer before the next):
-1) “Is your symptom physical, mental, or emotional?”
-2) “What symptom are you experiencing?”
-3) “On a scale from 1 to 10, how severe is it right now?”
-4) “Please describe what you’re feeling in more detail.”
-5) “Any additional notes or context (triggers, timing, other details)?”
+        instructions: `You are a friendly clinical intake assistant. Keep it conversational and empathetic.
+Gather the patient's symptom information in a natural flow. DO NOT ask the patient to classify their symptom as physical, emotional, or mental.
+Instead, infer that category yourself from what they say.
 
-Be brief, empathetic, and do not ask extra questions.`,
-        input_audio_transcription: {
-          model: "whisper-1"
-        },
+Flow:
+- Greet briefly and ask what symptom they're experiencing.
+- Ask for severity (1–10).
+- Ask for a short description in their own words (what it feels like, onset, timing).
+- Ask if there are any extra notes (triggers, context, anything else they'd like to add).
+- Confirm you’ve captured the details.
+
+Style:
+- Short, clear questions. One at a time. Wait for the patient's response before continuing.
+- Be supportive and non-alarming.
+- Don't provide medical diagnosis or treatment recommendations.`,
+
+        input_audio_transcription: { model: "whisper-1" },
+        // Tuned to reduce turn spam (optional; adjust to taste)
         turn_detection: {
           type: "server_vad",
-          threshold: 0.5,
+          threshold: 0.7,
           prefix_padding_ms: 300,
-          silence_duration_ms: 500
+          silence_duration_ms: 1200
         },
         temperature: 0.7,
-        max_response_output_tokens: 2048
+        max_response_output_tokens: 512
       }),
     });
 
@@ -237,7 +246,7 @@ Be brief, empathetic, and do not ask extra questions.`,
   }
 });
 
-// Get session data endpoint
+// Simple session endpoints (optional)
 app.get('/api/sessions/:sessionId', (req, res) => {
   const session = activeSessions.get(req.params.sessionId);
   if (session) {
@@ -253,12 +262,10 @@ app.get('/api/sessions/:sessionId', (req, res) => {
   }
 });
 
-// Save session data endpoint
 app.post('/api/sessions/:sessionId/save', (req, res) => {
   const session = activeSessions.get(req.params.sessionId);
   if (session && session.isComplete) {
     console.log('Saving patient data:', session.patientData);
-
     res.json({
       success: true,
       message: 'Patient symptoms recorded successfully',
@@ -269,7 +276,7 @@ app.post('/api/sessions/:sessionId/save', (req, res) => {
   }
 });
 
-// Health check endpoint
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
@@ -284,16 +291,13 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/patient', patientRoutes);
 app.use('/api/provider', providerRoutes);
 
-// Error handling middleware
+// Error handling
 app.use((error, req, res, next) => {
   console.error('Server error:', error);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: error.message
-  });
+  res.status(500).json({ error: 'Internal server error', message: error.message });
 });
 
-// Start server with WebSocket support
+// Start
 const PORT = process.env.PORT || 8800;
 server.listen(PORT, function () {
   db_connect()
