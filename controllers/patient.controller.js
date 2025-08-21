@@ -11,14 +11,14 @@ const sendResponse = (res, status, message, result = {}, error = "") => {
 export const addSymptom = async (req, res) => {
     console.log("Adding symptom for patient:", req.body);
   try {
-    const { symptom_type, description, severity_level, additional_notes } = req.body;
+    const { symptom_type,symptom, description, severity_level, additional_notes } = req.body;
     const patientId = req.user.id;
 
     if (!symptom_type || !severity_level) {
       return sendResponse(res, 400, "Symptom type and severity level are required", {}, "Missing required fields");
     }
 
-    const symptom = new Symptom({
+    const symptomMod = new Symptom({
       symptom_type,
       description,
       severity_level,
@@ -26,8 +26,8 @@ export const addSymptom = async (req, res) => {
       patient: patientId
     });
 
-    await symptom.save();
-    sendResponse(res, 201, "Symptom added successfully", symptom);
+    await symptomMod.save();
+    sendResponse(res, 201, "Symptom added successfully", symptomMod);
   } catch (error) {
     sendResponse(res, 500, "Failed to add symptom", {}, error.message);
   }
