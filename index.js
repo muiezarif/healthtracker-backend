@@ -206,10 +206,11 @@ Instead, infer that category yourself from what they say.
 
 Flow:
 - Greet briefly and ask what symptom they're experiencing.
-- Ask for severity (1–10).
+- Ask for severity (Mild,Moderate,severe,worst).
 - Ask for a short description in their own words (what it feels like, onset, timing).
 - Ask if there are any extra notes (triggers, context, anything else they'd like to add).
 - Confirm you’ve captured the details.
+- Don's ask for any more symptom each session is for recording one symptom only.
 
 Style:
 - Short, clear questions. One at a time. Wait for the patient's response before continuing.
@@ -220,12 +221,12 @@ Style:
         // Tuned to reduce turn spam (optional; adjust to taste)
         turn_detection: {
           type: "server_vad",
-          threshold: 0.7,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 1200
+          threshold: 0.5,
+          prefix_padding_ms: 500,
+          silence_duration_ms: 500
         },
         temperature: 0.7,
-        max_response_output_tokens: 512
+        max_response_output_tokens: 256
       }),
     });
 
