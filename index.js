@@ -9,6 +9,9 @@ import authRoutes from './routes/auth.route.js';
 import adminRoutes from './routes/admin.route.js';
 import patientRoutes from './routes/patient.route.js';
 import providerRoutes from './routes/provider.route.js';
+import voiceAgentRoutes from './routes/voice-agent.route.js';
+import conversationRoutes from "./routes/conversation.route.js";
+
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 
@@ -182,70 +185,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (req, res) => res.send("Health Tracker API - Running"));
 
-// Realtime session token — conversational instructions, no “type” question.
-// The assistant will infer the category from the symptom/description.
-app.get("/api/token", async (req, res) => {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OpenAI API key not configured" });
-    }
 
-    const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-realtime-preview-2024-12-17",
-        modalities: ["text", "audio"],
-        voice: "alloy",
-        instructions: `You are a friendly clinical intake assistant. Keep it conversational and empathetic.
-Gather the patient's symptom information in a natural flow. DO NOT ask the patient to classify their symptom as physical, emotional, or mental.
-Instead, infer that category yourself from what they say.
-
-Flow:
-- Greet briefly and ask what symptom they're experiencing.
-- Ask for severity (Mild,Moderate,severe,worst).
-- Ask for a short description in their own words (what it feels like, onset, timing).
-- Ask if there are any extra notes (triggers, context, anything else they'd like to add).
-- Confirm you’ve captured the details.
-- Don's ask for any more symptom each session is for recording one symptom only.
-
-Style:
-- Short, clear questions. One at a time. Wait for the patient's response before continuing.
-- Be supportive and non-alarming.
-- Don't provide medical diagnosis or treatment recommendations.`,
-
-        input_audio_transcription: { model: "whisper-1" },
-        // Tuned to reduce turn spam (optional; adjust to taste)
-        turn_detection: {
-          type: "server_vad",
-          threshold: 0.5,
-          prefix_padding_ms: 500,
-          silence_duration_ms: 500
-        },
-        temperature: 0.7,
-        max_response_output_tokens: 256
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI API error:", errorText);
-      return res.status(response.status).json({
-        error: "Failed to create session",
-        details: errorText
-      });
-    }
-
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    console.error("Token generation error:", error);
-    res.status(500).json({ error: "Failed to generate token" });
-  }
-});
 
 // Simple session endpoints (optional)
 app.get('/api/sessions/:sessionId', (req, res) => {
@@ -291,6 +231,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/patient', patientRoutes);
 app.use('/api/provider', providerRoutes);
+app.use('/api/voice-agent', voiceAgentRoutes);
+app.use("/api/conversations", conversationRoutes);
 
 // Error handling
 app.use((error, req, res, next) => {
