@@ -76,11 +76,7 @@ export const login = async (req, res) => {
 
     return sendResponse(res, 200, "Login successful", {
       token,
-      user: {
-        id: user._id,
-        role: user.role,
-        email: user.email
-      }
+      user
     });
   } catch (error) {
     return sendResponse(res, 500, "Login failed", {}, error.message);

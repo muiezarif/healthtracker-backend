@@ -2,6 +2,7 @@ import Patient from '../models/patient.model.js';
 import Provider from '../models/provider.model.js';
 import Symptom from '../models/symptom.model.js';
 import bcrypt from 'bcryptjs';
+import PatientLinkRequest from "../models/patientLinkRequest.model.js";
 
 // ✅ Helper: Standard Response
 const sendResponse = (res, status, message, result = {}, error = "") => {
@@ -213,3 +214,80 @@ export const updatePatient = async (req, res) => {
     sendResponse(res, 500, "Failed to update patient details", {}, error.message);
   }
 };
+
+// Provider -> view incoming pending requests
+export const getIncomingLinkRequests = async (req, res) => {
+  try {
+    const providerId = req.user.id;
+    const requests = await PatientLinkRequest.find({
+      provider: providerId,
+      status: "pending",
+    })
+      .sort({ createdAt: -1 })
+      .populate("patient", "fullName email"); // your patient schema exposes these fields
+    return sendResponse(res, 200, "Incoming link requests fetched", requests);
+  } catch (error) {
+    return sendResponse(res, 500, "Failed to fetch incoming link requests", {}, error.message);
+  }
+};
+
+// Provider -> accept a link request (links both sides, then deletes the request)
+export const acceptLinkRequest = async (req, res) => {
+  try {
+    const providerId = req.user.id;
+    const { id } = req.params;
+
+    const reqDoc = await PatientLinkRequest.findOne({
+      _id: id,
+      provider: providerId,
+      status: "pending",
+    });
+    if (!reqDoc) {
+      return sendResponse(res, 404, "Request not found or not pending");
+    }
+
+    const patientId = reqDoc.patient;
+
+    // Link both directions using $addToSet (no duplicates)
+    await Patient.findByIdAndUpdate(
+      patientId,
+      { $addToSet: { providers: providerId } },
+      { new: true }
+    );
+    await Provider.findByIdAndUpdate(
+      providerId,
+      { $addToSet: { patients: patientId } },
+      { new: true }
+    ); // matches your $addToSet pattern elsewhere. :contentReference[oaicite:5]{index=5}
+
+    // Remove the request after acceptance
+    await PatientLinkRequest.deleteOne({ _id: id });
+
+    return sendResponse(res, 200, "Link request accepted; patient linked");
+  } catch (error) {
+    return sendResponse(res, 500, "Failed to accept link request", {}, error.message);
+  }
+};
+
+// Provider -> reject a link request (delete request)
+export const rejectLinkRequest = async (req, res) => {
+  try {
+    const providerId = req.user.id;
+    const { id } = req.params;
+
+    const reqDoc = await PatientLinkRequest.findOne({
+      _id: id,
+      provider: providerId,
+      status: "pending",
+    });
+    if (!reqDoc) {
+      return sendResponse(res, 404, "Request not found or not pending");
+    }
+
+    await PatientLinkRequest.deleteOne({ _id: id });
+    return sendResponse(res, 200, "Link request rejected and removed");
+  } catch (error) {
+    return sendResponse(res, 500, "Failed to reject link request", {}, error.message);
+  }
+};
+
