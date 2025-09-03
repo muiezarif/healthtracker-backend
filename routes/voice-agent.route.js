@@ -80,6 +80,127 @@ router.get("/provider-report/token", async (req, res) => {
       return res.status(500).json({ error: "OpenAI API key not configured" });
     }
 
+    // const { patientId } = req.params;
+    // if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+    //   return res.status(400).json({ error: "patientId is required" });
+    // }
+
+     const rawId = String((req.query?.patientId ?? "")).trim();
+ if (!rawId) {
+   return res.status(400).json({ error: "patientId query param is required" });
+ }
+ let pid;
+ try {
+   // build a real ObjectId or throw a clean 422 explaining what’s wrong
+   pid = new mongoose.Types.ObjectId(rawId);
+ } catch {
+   return res.status(422).json({ error: "Invalid patientId format (expected 24-char Mongo ObjectId)" });
+ }
+
+    // ---------- Build FULL patient context (all history) ----------
+    // Symptoms (all rows)
+    const symptoms = await Symptom.find({ patient: pid })
+      .sort({ createdAt: 1 }) // oldest -> newest for better trend math
+      .lean();
+
+    // Aggregate by type + per-day timeline
+    const byType = { physical: 0, mental: 0, emotional: 0, other: 0 };
+    let total = 0, sumSeverity = 0;
+    const timelineMap = new Map();
+
+    for (const s of symptoms) {
+      const t = ["physical", "mental", "emotional"].includes(s.symptom_type) ? s.symptom_type : "other";
+      byType[t] += 1;
+      total += 1;
+      if (typeof s.severity_level === "number") sumSeverity += s.severity_level;
+      const day = new Date(s.createdAt).toISOString().slice(0, 10);
+      const e = timelineMap.get(day) || { date: day, count: 0, sum: 0 };
+      e.count += 1;
+      e.sum += (s.severity_level || 0);
+      timelineMap.set(day, e);
+    }
+    const avgSeverity = total ? +(sumSeverity / total).toFixed(2) : null;
+    const timeline = Array.from(timelineMap.values())
+      .map(({ date, count, sum }) => ({ date, count, avgSeverity: +(sum / count).toFixed(2) }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Conversations (all threads) — flatten messages (cap to keep payload sane)
+    const convs = await Conversation.find({ patient: pid })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const flatMessages = [];
+    for (const c of convs) {
+      if (Array.isArray(c.messages)) {
+        for (const m of c.messages) {
+          if (m?.role && m?.text) flatMessages.push({ role: m.role, text: m.text });
+        }
+      }
+      if (flatMessages.length > 1200) break; // hard cap to avoid giant payloads
+    }
+
+    // A compact “recent” slice plus aggregates + timeline gives the model range queries
+    const recentSymptoms = symptoms.slice(-100).map(s => ({
+      id: String(s._id),
+      type: s.symptom_type,
+      symptom: s.symptom,
+      description: s.description,
+      severity: s.severity_level,
+      notes: s.additional_notes,
+      createdAt: s.createdAt,
+    }));
+
+    let PATIENT_CONTEXT = {
+      patientId: String(pid),
+      summary: {
+        totalSymptoms: total,
+        avgSeverity,
+        countsByType: byType,
+        firstRecordDate: symptoms[0]?.createdAt || null,
+        lastRecordDate: symptoms.at(-1)?.createdAt || null
+      },
+      symptoms: {
+        timeline,        // daily series across ALL time
+        recent: recentSymptoms
+      },
+      conversations: {
+        totalThreads: convs.length,
+        totalMessagesApprox: flatMessages.length,
+        recentMessages: flatMessages.slice(-600) // most recent 600 messages
+      }
+    };
+
+    // Trim if too long (> ~180k chars) by decimating timeline and messages
+    const MAX_CHARS = 180_000;
+    const toString = (obj) => JSON.stringify(obj);
+    let contextStr = toString(PATIENT_CONTEXT);
+    if (contextStr.length > MAX_CHARS) {
+      // decimate timeline to roughly every Nth day
+      const factor = Math.ceil(contextStr.length / MAX_CHARS);
+      PATIENT_CONTEXT.symptoms.timeline = PATIENT_CONTEXT.symptoms.timeline.filter((_, i) => i % factor === 0);
+      // keep fewer recent messages
+      const keep = Math.max(120, Math.floor(600 / factor));
+      PATIENT_CONTEXT.conversations.recentMessages = PATIENT_CONTEXT.conversations.recentMessages.slice(-keep);
+      contextStr = toString(PATIENT_CONTEXT);
+    }
+console.log(`Built PATIENT_CONTEXT`,{contextStr});
+    // ---------- Create Realtime session with PATIENT_CONTEXT embedded ----------
+    const instructions = `
+You are a clinical report assistant for healthcare providers.
+
+PATIENT_CONTEXT (JSON):
+${contextStr}
+
+Rules:
+- Answer ONLY using the PATIENT_CONTEXT above. Do not invent data.
+- If asked for a time window (e.g. "past week"), filter using the dates in PATIENT_CONTEXT.
+- If the answer requires data older/newer than available, say what's missing.
+- Do not diagnose or recommend treatment.
+
+Output style:
+- Start with a direct answer (1–2 sentences), then 3–6 concise bullets (key symptoms, trends, notable quotes if any), and include dates where relevant.
+    `.trim();
+
     const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
       method: "POST",
       headers: {
@@ -90,149 +211,29 @@ router.get("/provider-report/token", async (req, res) => {
         model: "gpt-4o-realtime-preview-2024-12-17",
         modalities: ["text", "audio"],
         voice: "alloy",
-        // The assistant is told to rely on PATIENT_CONTEXT the client will send first.
-        instructions: `You are a clinical report assistant for healthcare providers.
-You ONLY answer using the PATIENT_CONTEXT JSON the client will send in the FIRST user message.
-That JSON includes (1) structured symptom data and (2) snippets of prior patient-assistant conversations.
-Guidelines:
-- Be concise and clinically useful. Use plain language first, then bullets.
-- Time-window questions (e.g. "past week") must use the window in the question; otherwise default to the context's windowDays.
-- If the requested answer is outside the PATIENT_CONTEXT, say what is missing and ask the provider to refresh the report or adjust the time range.
-- Never invent data. Never provide diagnoses or treatment.
-
-Output style:
-- Direct answer (1–2 sentences), then bullets for: key symptoms, trends, and any notable quotes from conversations (if relevant).
-- Include dates when summarizing trends.`,
-
+        instructions,
         input_audio_transcription: { model: "whisper-1" },
-        turn_detection: {
-          type: "server_vad",
-          threshold: 0.5,
-          prefix_padding_ms: 500,
-          silence_duration_ms: 500
-        },
+        turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 500, silence_duration_ms: 500 },
         temperature: 0.7,
-        max_response_output_tokens: 350
+        max_response_output_tokens: 2000
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("OpenAI API error:", errorText);
+      console.log("OpenAI provider-report API error:", errorText);
       return res.status(response.status).json({ error: "Failed to create session", details: errorText });
     }
 
+    // The response contains a client_secret.value (ephemeral key) with these instructions baked in
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error("Token generation error:", error);
-    res.status(500).json({ error: "Failed to generate token" });
+    console.error("provider-report/token error", error);
+    res.status(500).json({ error: "Failed to generate provider report token", details: error.message });
   }
 });
 
-/** ---------------- Provider: patient data payload for the report ----------------
- * Returns symptoms + conversation snippets for a patient within a time window.
- * Frontend will pass this JSON as the first user message (PATIENT_CONTEXT).
- */
-router.get("/provider-report/patient-data", async (req, res) => {
-  try {
-    const { patientId, windowDays = 7 } = req.query;
-    if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
-      return res.status(400).json({ error: "patientId is required" });
-    }
 
-    const days = Math.max(1, Math.min(90, Number(windowDays) || 7));
-    const end = new Date();
-    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
-
-    // Symptoms in the window
-    const symptoms = await Symptom.find({
-      patient: patientId,
-      createdAt: { $gte: start, $lte: end },
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Quick aggregates
-    const byType = { physical: [], mental: [], emotional: [], other: [] };
-    let total = 0, sumSeverity = 0;
-    for (const s of symptoms) {
-      const t = ["physical", "mental", "emotional"].includes(s.symptom_type) ? s.symptom_type : "other";
-      byType[t].push(s);
-      total += 1;
-      if (typeof s.severity_level === "number") sumSeverity += s.severity_level;
-    }
-    const avgSeverity = total ? +(sumSeverity / total).toFixed(2) : null;
-
-    // Timeline (daily)
-    const timelineMap = new Map();
-    for (const s of symptoms) {
-      const key = new Date(s.createdAt).toISOString().slice(0, 10);
-      const e = timelineMap.get(key) || { date: key, count: 0, sum: 0 };
-      e.count += 1;
-      e.sum += (s.severity_level || 0);
-      timelineMap.set(key, e);
-    }
-    const timeline = Array.from(timelineMap.values())
-      .map(({ date, count, sum }) => ({ date, count, avgSeverity: +(sum / count).toFixed(2) }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    // Conversations in the window (last 10 threads)
-    const convs = await Conversation.find({
-      patient: patientId,
-      updatedAt: { $gte: start, $lte: end },
-    })
-      .sort({ updatedAt: -1 })
-      .limit(10)
-      .lean();
-
-    // Flatten last ~100 messages for context (no per-message timestamps in schema)
-    const flatMessages = [];
-    for (const c of convs) {
-      if (Array.isArray(c.messages)) {
-        for (const m of c.messages) {
-          if (m?.role && m?.text) {
-            flatMessages.push({ role: m.role, text: m.text });
-          }
-        }
-      }
-      if (flatMessages.length > 100) break;
-    }
-    const recentConversation = flatMessages.slice(-100);
-
-    res.json({
-      patientId,
-      windowDays: days,
-      range: { startISO: start.toISOString(), endISO: end.toISOString() },
-      symptoms: {
-        total,
-        avgSeverity,
-        countsByType: {
-          physical: byType.physical.length,
-          mental: byType.mental.length,
-          emotional: byType.emotional.length,
-          other: byType.other.length,
-        },
-        recent: symptoms.slice(0, 20).map(s => ({
-          id: String(s._id),
-          type: s.symptom_type,
-          symptom: s.symptom,
-          description: s.description,
-          severity: s.severity_level,
-          notes: s.additional_notes,
-          createdAt: s.createdAt,
-        })),
-        timeline
-      },
-      conversations: {
-        threads: convs.length,
-        recentMessages: recentConversation
-      }
-    });
-  } catch (error) {
-    console.error("provider-report/patient-data error", error);
-    res.status(500).json({ error: "Failed to fetch patient report data", details: error.message });
-  }
-});
 
 export default router;
