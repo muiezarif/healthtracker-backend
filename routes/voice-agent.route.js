@@ -166,7 +166,7 @@ router.get("/provider-report/token", async (req, res) => {
       conversations: {
         totalThreads: convs.length,
         totalMessagesApprox: flatMessages.length,
-        recentMessages: flatMessages.slice(-600) // most recent 600 messages
+        recentMessages: flatMessages // most recent 600 messages
       }
     };
 
