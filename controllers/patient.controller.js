@@ -3,7 +3,7 @@ import Patient from '../models/patient.model.js';
 import Provider from '../models/provider.model.js';
 import PatientHealthRecord from "../models/patientHealthRecord.model.js";
 import PatientLinkRequest from "../models/patientLinkRequest.model.js";
-
+import Conversation from "../models/conversation.model.js";
 // ✅ Helper: Standard Response
 const sendResponse = (res, status, message, result = {}, error = "") => {
   res.status(status).json({ status, message, result, error });
@@ -36,14 +36,30 @@ export const addSymptom = async (req, res) => {
 };
 
 // 📄 Get symptom history of logged-in patient
+// export const getSymptomHistory = async (req, res) => {
+//   try {
+//     const patientId = req.user.id;
+//     const symptoms = await Symptom.find({ patient: patientId }).sort({ createdAt: -1 });
+
+//     sendResponse(res, 200, "Symptom history fetched", symptoms);
+//   } catch (error) {
+//     sendResponse(res, 500, "Failed to fetch symptom history", {}, error.message);
+//   }
+// };
+
 export const getSymptomHistory = async (req, res) => {
   try {
     const patientId = req.user.id;
-    const symptoms = await Symptom.find({ patient: patientId }).sort({ createdAt: -1 });
 
-    sendResponse(res, 200, "Symptom history fetched", symptoms);
+    const [symptoms, conversations] = await Promise.all([
+      Symptom.find({ patient: patientId }).sort({ createdAt: -1 }),
+      Conversation.find({ patient: patientId }).sort({ updatedAt: -1 }) // newest activity first
+    ]);
+
+    // Return both so FE can render a timeline
+    sendResponse(res, 200, "History fetched", { symptoms, conversations });
   } catch (error) {
-    sendResponse(res, 500, "Failed to fetch symptom history", {}, error.message);
+    sendResponse(res, 500, "Failed to fetch history", {}, error.message);
   }
 };
 
