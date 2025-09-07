@@ -16,6 +16,8 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 
 const app = express();
+
+app.set('trust proxy', 1);
 dotenv.config();
 const server = createServer(app);
 
