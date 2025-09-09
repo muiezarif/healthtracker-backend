@@ -11,22 +11,22 @@ const router = express.Router();
 // Realtime session token — conversational instructions, no “type” question.
 // The assistant will infer the category from the symptom/description.
 router.get("/symptom-recorder/token", async (req, res) => {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OpenAI API key not configured" });
-    }
+    try {
+        if (!process.env.OPENAI_API_KEY) {
+            return res.status(500).json({ error: "OpenAI API key not configured" });
+        }
 
-    const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-realtime-preview-2024-12-17",
-        modalities: ["text", "audio"],
-        voice: "alloy",
-        instructions: `You are a friendly clinical intake assistant. Keep it conversational and empathetic.
+        const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-realtime-preview-2024-12-17",
+                modalities: ["text", "audio"],
+                voice: "alloy",
+                instructions: `You are a friendly clinical intake assistant. Keep it conversational and empathetic.
 Gather the patient's symptom information in a natural flow. DO NOT ask the patient to classify their symptom as physical, emotional, or mental.
 Instead, infer that category yourself from what they say.
 
@@ -43,149 +43,149 @@ Style:
 - Be supportive and non-alarming.
 - Don't provide medical diagnosis or treatment recommendations.`,
 
-        input_audio_transcription: { model: "whisper-1" },
-        // Tuned to reduce turn spam (optional; adjust to taste)
-        turn_detection: {
-          type: "server_vad",
-          threshold: 0.5,
-          prefix_padding_ms: 500,
-          silence_duration_ms: 500
-        },
-        temperature: 0.7,
-        max_response_output_tokens: 256
-      }),
-    });
+                input_audio_transcription: { model: "whisper-1" },
+                // Tuned to reduce turn spam (optional; adjust to taste)
+                turn_detection: {
+                    type: "server_vad",
+                    threshold: 0.5,
+                    prefix_padding_ms: 500,
+                    silence_duration_ms: 500
+                },
+                temperature: 0.7,
+                max_response_output_tokens: 256
+            }),
+        });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI API error:", errorText);
-      return res.status(response.status).json({
-        error: "Failed to create session",
-        details: errorText
-      });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("OpenAI API error:", errorText);
+            return res.status(response.status).json({
+                error: "Failed to create session",
+                details: errorText
+            });
+        }
+
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error("Token generation error:", error);
+        res.status(500).json({ error: "Failed to generate token" });
     }
-
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    console.error("Token generation error:", error);
-    res.status(500).json({ error: "Failed to generate token" });
-  }
 });
 
 
 router.get("/provider-report/token", async (req, res) => {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OpenAI API key not configured" });
-    }
-
-    // const { patientId } = req.params;
-    // if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
-    //   return res.status(400).json({ error: "patientId is required" });
-    // }
-
-     const rawId = String((req.query?.patientId ?? "")).trim();
- if (!rawId) {
-   return res.status(400).json({ error: "patientId query param is required" });
- }
- let pid;
- try {
-   // build a real ObjectId or throw a clean 422 explaining what’s wrong
-   pid = new mongoose.Types.ObjectId(rawId);
- } catch {
-   return res.status(422).json({ error: "Invalid patientId format (expected 24-char Mongo ObjectId)" });
- }
-
-    // ---------- Build FULL patient context (all history) ----------
-    // Symptoms (all rows)
-    const symptoms = await Symptom.find({ patient: pid })
-      .sort({ createdAt: 1 }) // oldest -> newest for better trend math
-      .lean();
-
-    // Aggregate by type + per-day timeline
-    const byType = { physical: 0, mental: 0, emotional: 0, other: 0 };
-    let total = 0, sumSeverity = 0;
-    const timelineMap = new Map();
-
-    for (const s of symptoms) {
-      const t = ["physical", "mental", "emotional"].includes(s.symptom_type) ? s.symptom_type : "other";
-      byType[t] += 1;
-      total += 1;
-      if (typeof s.severity_level === "number") sumSeverity += s.severity_level;
-      const day = new Date(s.createdAt).toISOString().slice(0, 10);
-      const e = timelineMap.get(day) || { date: day, count: 0, sum: 0 };
-      e.count += 1;
-      e.sum += (s.severity_level || 0);
-      timelineMap.set(day, e);
-    }
-    const avgSeverity = total ? +(sumSeverity / total).toFixed(2) : null;
-    const timeline = Array.from(timelineMap.values())
-      .map(({ date, count, sum }) => ({ date, count, avgSeverity: +(sum / count).toFixed(2) }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    // Conversations (all threads) — flatten messages (cap to keep payload sane)
-    const convs = await Conversation.find({ patient: pid })
-      .sort({ updatedAt: -1 })
-      .lean();
-
-    const flatMessages = [];
-    for (const c of convs) {
-      if (Array.isArray(c.messages)) {
-        for (const m of c.messages) {
-          if (m?.role && m?.text) flatMessages.push({ role: m.role, text: m.text });
+    try {
+        if (!process.env.OPENAI_API_KEY) {
+            return res.status(500).json({ error: "OpenAI API key not configured" });
         }
-      }
-      if (flatMessages.length > 1200) break; // hard cap to avoid giant payloads
-    }
 
-    // A compact “recent” slice plus aggregates + timeline gives the model range queries
-    const recentSymptoms = symptoms.slice(-100).map(s => ({
-      id: String(s._id),
-      type: s.symptom_type,
-      symptom: s.symptom,
-      description: s.description,
-      severity: s.severity_level,
-      notes: s.additional_notes,
-      createdAt: s.createdAt,
-    }));
+        // const { patientId } = req.params;
+        // if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+        //   return res.status(400).json({ error: "patientId is required" });
+        // }
 
-    let PATIENT_CONTEXT = {
-      patientId: String(pid),
-      summary: {
-        totalSymptoms: total,
-        avgSeverity,
-        countsByType: byType,
-        firstRecordDate: symptoms[0]?.createdAt || null,
-        lastRecordDate: symptoms.at(-1)?.createdAt || null
-      },
-      symptoms: {
-        timeline,        // daily series across ALL time
-        recent: recentSymptoms
-      },
-      conversations: {
-        totalThreads: convs.length,
-        totalMessagesApprox: flatMessages.length,
-        recentMessages: flatMessages // most recent 600 messages
-      }
-    };
+        const rawId = String((req.query?.patientId ?? "")).trim();
+        if (!rawId) {
+            return res.status(400).json({ error: "patientId query param is required" });
+        }
+        let pid;
+        try {
+            // build a real ObjectId or throw a clean 422 explaining what’s wrong
+            pid = new mongoose.Types.ObjectId(rawId);
+        } catch {
+            return res.status(422).json({ error: "Invalid patientId format (expected 24-char Mongo ObjectId)" });
+        }
 
-    // Trim if too long (> ~180k chars) by decimating timeline and messages
-    const MAX_CHARS = 180_000;
-    const toString = (obj) => JSON.stringify(obj);
-    let contextStr = toString(PATIENT_CONTEXT);
-    if (contextStr.length > MAX_CHARS) {
-      // decimate timeline to roughly every Nth day
-      const factor = Math.ceil(contextStr.length / MAX_CHARS);
-      PATIENT_CONTEXT.symptoms.timeline = PATIENT_CONTEXT.symptoms.timeline.filter((_, i) => i % factor === 0);
-      // keep fewer recent messages
-      const keep = Math.max(120, Math.floor(600 / factor));
-      PATIENT_CONTEXT.conversations.recentMessages = PATIENT_CONTEXT.conversations.recentMessages.slice(-keep);
-      contextStr = toString(PATIENT_CONTEXT);
-    }
-console.log(`Built PATIENT_CONTEXT`,{contextStr});
-    // ---------- Create Realtime session with PATIENT_CONTEXT embedded ----------
-    const instructions = `
+        // ---------- Build FULL patient context (all history) ----------
+        // Symptoms (all rows)
+        const symptoms = await Symptom.find({ patient: pid })
+            .sort({ createdAt: 1 }) // oldest -> newest for better trend math
+            .lean();
+
+        // Aggregate by type + per-day timeline
+        const byType = { physical: 0, mental: 0, emotional: 0, other: 0 };
+        let total = 0, sumSeverity = 0;
+        const timelineMap = new Map();
+
+        for (const s of symptoms) {
+            const t = ["physical", "mental", "emotional"].includes(s.symptom_type) ? s.symptom_type : "other";
+            byType[t] += 1;
+            total += 1;
+            if (typeof s.severity_level === "number") sumSeverity += s.severity_level;
+            const day = new Date(s.createdAt).toISOString().slice(0, 10);
+            const e = timelineMap.get(day) || { date: day, count: 0, sum: 0 };
+            e.count += 1;
+            e.sum += (s.severity_level || 0);
+            timelineMap.set(day, e);
+        }
+        const avgSeverity = total ? +(sumSeverity / total).toFixed(2) : null;
+        const timeline = Array.from(timelineMap.values())
+            .map(({ date, count, sum }) => ({ date, count, avgSeverity: +(sum / count).toFixed(2) }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        // Conversations (all threads) — flatten messages (cap to keep payload sane)
+        const convs = await Conversation.find({ patient: pid })
+            .sort({ updatedAt: -1 })
+            .lean();
+
+        const flatMessages = [];
+        for (const c of convs) {
+            if (Array.isArray(c.messages)) {
+                for (const m of c.messages) {
+                    if (m?.role && m?.text) flatMessages.push({ role: m.role, text: m.text });
+                }
+            }
+            if (flatMessages.length > 1200) break; // hard cap to avoid giant payloads
+        }
+
+        // A compact “recent” slice plus aggregates + timeline gives the model range queries
+        const recentSymptoms = symptoms.slice(-100).map(s => ({
+            id: String(s._id),
+            type: s.symptom_type,
+            symptom: s.symptom,
+            description: s.description,
+            severity: s.severity_level,
+            notes: s.additional_notes,
+            createdAt: s.createdAt,
+        }));
+
+        let PATIENT_CONTEXT = {
+            patientId: String(pid),
+            summary: {
+                totalSymptoms: total,
+                avgSeverity,
+                countsByType: byType,
+                firstRecordDate: symptoms[0]?.createdAt || null,
+                lastRecordDate: symptoms.at(-1)?.createdAt || null
+            },
+            symptoms: {
+                timeline,        // daily series across ALL time
+                recent: recentSymptoms
+            },
+            conversations: {
+                totalThreads: convs.length,
+                totalMessagesApprox: flatMessages.length,
+                recentMessages: flatMessages // most recent 600 messages
+            }
+        };
+
+        // Trim if too long (> ~180k chars) by decimating timeline and messages
+        const MAX_CHARS = 180_000;
+        const toString = (obj) => JSON.stringify(obj);
+        let contextStr = toString(PATIENT_CONTEXT);
+        if (contextStr.length > MAX_CHARS) {
+            // decimate timeline to roughly every Nth day
+            const factor = Math.ceil(contextStr.length / MAX_CHARS);
+            PATIENT_CONTEXT.symptoms.timeline = PATIENT_CONTEXT.symptoms.timeline.filter((_, i) => i % factor === 0);
+            // keep fewer recent messages
+            const keep = Math.max(120, Math.floor(600 / factor));
+            PATIENT_CONTEXT.conversations.recentMessages = PATIENT_CONTEXT.conversations.recentMessages.slice(-keep);
+            contextStr = toString(PATIENT_CONTEXT);
+        }
+        console.log(`Built PATIENT_CONTEXT`, { contextStr });
+        // ---------- Create Realtime session with PATIENT_CONTEXT embedded ----------
+        const instructions = `
 You are a clinical report assistant for healthcare providers.
 
 PATIENT_CONTEXT (JSON):
@@ -201,6 +201,136 @@ Output style:
 - Start with a direct answer (1–2 sentences), then 3–6 concise bullets (key symptoms, trends, notable quotes if any), and include dates where relevant.
     `.trim();
 
+        const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-realtime-preview-2024-12-17",
+                modalities: ["text", "audio"],
+                voice: "alloy",
+                instructions,
+                input_audio_transcription: { model: "whisper-1" },
+                turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 500, silence_duration_ms: 500 },
+                temperature: 0.7,
+                max_response_output_tokens: 2000
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.log("OpenAI provider-report API error:", errorText);
+            return res.status(response.status).json({ error: "Failed to create session", details: errorText });
+        }
+
+        // The response contains a client_secret.value (ephemeral key) with these instructions baked in
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error("provider-report/token error", error);
+        res.status(500).json({ error: "Failed to generate provider report token", details: error.message });
+    }
+});
+
+// Dummy Voice Agent session token — now with seeded patient data and optional focus via ?patient=Sarah Johnson
+// GET /voice-agent/token?voice=alloy&patient=Sarah%20Johnson
+router.get("/voice-agent/token", async (req, res) => {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: "OpenAI API key not configured" });
+    }
+
+    // Optional query overrides
+    const voice = String(req.query?.voice || "alloy").trim();
+    const focusPatient = String(req.query?.patient || "").trim(); // e.g. "Sarah Johnson"
+
+    // -------------------- Seeded Demo Data --------------------
+    const PATIENTS = [
+      {
+        id: "demo-sarah-johnson",
+        name: "Sarah Johnson",
+        dob: "1990-04-12",
+        contact: { phone: "(555) 201-7364", email: "sarah.johnson@example.com" },
+        appointments: [
+          { id: "apt-sj-001", date: "2025-09-05", time: "10:30", type: "Follow-up", provider: "Dr. Patel", status: "completed", notes: "Discussed recurring headaches" },
+          { id: "apt-sj-002", date: "2025-09-12", time: "09:00", type: "Telehealth", provider: "NP Garcia", status: "scheduled", notes: "Check symptom trend" }
+        ],
+        inquiries: [
+          { id: "inq-sj-001", date: "2025-09-03", subject: "Headache frequency", message: "Having mild headaches most mornings. Should I adjust caffeine?" },
+          { id: "inq-sj-002", date: "2025-09-07", subject: "Medication question", message: "Is ibuprofen okay if I have to present at work?" }
+        ],
+        prior_conversation: [
+          { role: "user", text: "I've had mild headaches for the past week." },
+          { role: "assistant", text: "Thanks for sharing. Any fever or changes in appetite?" },
+          { role: "user", text: "No fever, appetite is good. Mostly mornings, stress related maybe." }
+        ],
+        symptom_summary: "Mild morning headaches x7 days, no fever, good appetite; possible stress trigger."
+      },
+      {
+        id: "demo-michael-chen",
+        name: "Michael Chen",
+        dob: "1985-11-02",
+        contact: { phone: "(555) 414-2289", email: "michael.chen@example.com" },
+        appointments: [
+          { id: "apt-mc-001", date: "2025-09-02", time: "16:15", type: "Urgent consult", provider: "Dr. Singh", status: "completed", notes: "Chest discomfort during exercise" },
+          { id: "apt-mc-002", date: "2025-09-16", time: "14:00", type: "Cardio screening", provider: "Dr. Singh", status: "scheduled", notes: "Treadmill test; bring workout log" }
+        ],
+        inquiries: [
+          { id: "inq-mc-001", date: "2025-09-01", subject: "Exercise pain", message: "Shortness of breath and chest tightness on hills—should I stop running?" }
+        ],
+        prior_conversation: [
+          { role: "user", text: "I feel chest discomfort when I push my runs harder." },
+          { role: "assistant", text: "Understood. Any dizziness, nausea, or pain radiating to arm/jaw?" },
+          { role: "user", text: "No dizziness or nausea, just tightness that eases with rest." }
+        ],
+        symptom_summary: "Exertional chest discomfort; resolves with rest; pending treadmill evaluation."
+      },
+      {
+        id: "demo-emma-davis",
+        name: "Emma Davis",
+        dob: "1997-06-21",
+        contact: { phone: "(555) 903-4410", email: "emma.davis@example.com" },
+        appointments: [
+          { id: "apt-ed-001", date: "2025-09-10", time: "11:45", type: "New patient intake", provider: "PA Nguyen", status: "scheduled", notes: "Routine physical; immunization review" }
+        ],
+        inquiries: [
+          { id: "inq-ed-001", date: "2025-09-04", subject: "What to bring", message: "Do I need fasting labs for my physical?" }
+        ],
+        prior_conversation: [
+          { role: "user", text: "Hi, I’m new. Just need a routine physical." },
+          { role: "assistant", text: "Welcome! Any current symptoms or concerns you’d like to note?" },
+          { role: "user", text: "No major concerns, just want to get established." }
+        ],
+        symptom_summary: "Asymptomatic; establishing care; routine physical planned."
+      }
+    ];
+
+    const FOCUSED = focusPatient
+      ? PATIENTS.filter(p => p.name.toLowerCase() === focusPatient.toLowerCase())
+      : PATIENTS;
+
+    // -------------------- System Instructions --------------------
+    // Keep the friendly voice but make the agent immediately aware of these demo charts.
+    const instructions = `
+You are a helpful, friendly clinic voice assistant. Speak naturally, one idea per sentence.
+
+Seeded demo patient data (JSON):
+${JSON.stringify(FOCUSED, null, 2)}
+
+Behavior:
+- Treat this list as the clinic's current working context for demo purposes.
+- If the user mentions Sarah Johnson, Michael Chen, or Emma Davis, use ONLY the seeded data above.
+- Do not invent details beyond this data. If unsure, say what is known from the data.
+- Be concise. Confirm key facts before acting. Never provide diagnosis or treatment.
+- If asked, you may summarize a patient's recent symptoms, upcoming appointments, or latest inquiries using dates.
+- When scheduling or replying to inquiries in this demo, simulate the action and confirm verbally (no real changes occur).
+
+Greet the user briefly. Then be ready to answer about these patients or general clinic tasks.
+    `.trim();
+
+    // -------------------- Create Realtime session --------------------
     const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
       method: "POST",
       headers: {
@@ -210,29 +340,38 @@ Output style:
       body: JSON.stringify({
         model: "gpt-4o-realtime-preview-2024-12-17",
         modalities: ["text", "audio"],
-        voice: "alloy",
+        voice,
         instructions,
         input_audio_transcription: { model: "whisper-1" },
-        turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 500, silence_duration_ms: 500 },
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.5,
+          prefix_padding_ms: 500,
+          silence_duration_ms: 500
+        },
         temperature: 0.7,
-        max_response_output_tokens: 2000
+        max_response_output_tokens: 768
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.log("OpenAI provider-report API error:", errorText);
-      return res.status(response.status).json({ error: "Failed to create session", details: errorText });
+      console.error("OpenAI Voice Agent API error:", errorText);
+      return res.status(response.status).json({
+        error: "Failed to create session",
+        details: errorText
+      });
     }
 
-    // The response contains a client_secret.value (ephemeral key) with these instructions baked in
     const data = await response.json();
     res.json(data);
-  } catch (error) {
-    console.error("provider-report/token error", error);
-    res.status(500).json({ error: "Failed to generate provider report token", details: error.message });
+  } catch (err) {
+    console.error("voice-agent/token error", err);
+    res.status(500).json({ error: "Failed to generate voice agent token", details: err.message });
   }
 });
+
+
 
 
 
