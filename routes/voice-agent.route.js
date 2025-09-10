@@ -234,142 +234,211 @@ Output style:
     }
 });
 
-// Dummy Voice Agent session token — now with seeded patient data and optional focus via ?patient=Sarah Johnson
-// GET /voice-agent/token?voice=alloy&patient=Sarah%20Johnson
+// Voice Agent — unified route with SIMULATION / WORKFLOW modes + seeded demo data
+// Examples:
+//   GET /voice-agent/token
+//   GET /voice-agent/token?mode=simulation&clinic=TruCare%20Clinic&agentName=Ava&phone=555-123-4567&location=Suite%20301
+//   GET /voice-agent/token?mode=workflow&patient=Sarah%20Johnson
 router.get("/voice-agent/token", async (req, res) => {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "OpenAI API key not configured" });
-    }
+    try {
+        if (!process.env.OPENAI_API_KEY) {
+            return res.status(500).json({ error: "OpenAI API key not configured" });
+        }
 
-    // Optional query overrides
-    const voice = String(req.query?.voice || "alloy").trim();
-    const focusPatient = String(req.query?.patient || "").trim(); // e.g. "Sarah Johnson"
+        // -------- Query overrides --------
+        const voice = String(req.query?.voice || "alloy").trim();
+        const mode = (String(req.query?.mode || "simulation").trim().toLowerCase() === "workflow")
+            ? "WORKFLOW"
+            : "SIMULATION"; // default to Simulation for demos
+        const clinicName = String(req.query?.clinic || "Demo Medical Practice").trim();
+        const agentName = String(req.query?.agentName || "AI Assistant").trim();
+        const clinicPhone = String(req.query?.phone || "(555) 000-0000").trim();
+        const clinicLocation = String(req.query?.location || "Main Clinic").trim();
+        const focusPatient = String(req.query?.patient || "").trim(); // optional focus
 
-    // -------------------- Seeded Demo Data --------------------
-    const PATIENTS = [
-      {
-        id: "demo-sarah-johnson",
-        name: "Sarah Johnson",
-        dob: "1990-04-12",
-        contact: { phone: "(555) 201-7364", email: "sarah.johnson@example.com" },
-        appointments: [
-          { id: "apt-sj-001", date: "2025-09-05", time: "10:30", type: "Follow-up", provider: "Dr. Patel", status: "completed", notes: "Discussed recurring headaches" },
-          { id: "apt-sj-002", date: "2025-09-12", time: "09:00", type: "Telehealth", provider: "NP Garcia", status: "scheduled", notes: "Check symptom trend" }
-        ],
-        inquiries: [
-          { id: "inq-sj-001", date: "2025-09-03", subject: "Headache frequency", message: "Having mild headaches most mornings. Should I adjust caffeine?" },
-          { id: "inq-sj-002", date: "2025-09-07", subject: "Medication question", message: "Is ibuprofen okay if I have to present at work?" }
-        ],
-        prior_conversation: [
-          { role: "user", text: "I've had mild headaches for the past week." },
-          { role: "assistant", text: "Thanks for sharing. Any fever or changes in appetite?" },
-          { role: "user", text: "No fever, appetite is good. Mostly mornings, stress related maybe." }
-        ],
-        symptom_summary: "Mild morning headaches x7 days, no fever, good appetite; possible stress trigger."
-      },
-      {
-        id: "demo-michael-chen",
-        name: "Michael Chen",
-        dob: "1985-11-02",
-        contact: { phone: "(555) 414-2289", email: "michael.chen@example.com" },
-        appointments: [
-          { id: "apt-mc-001", date: "2025-09-02", time: "16:15", type: "Urgent consult", provider: "Dr. Singh", status: "completed", notes: "Chest discomfort during exercise" },
-          { id: "apt-mc-002", date: "2025-09-16", time: "14:00", type: "Cardio screening", provider: "Dr. Singh", status: "scheduled", notes: "Treadmill test; bring workout log" }
-        ],
-        inquiries: [
-          { id: "inq-mc-001", date: "2025-09-01", subject: "Exercise pain", message: "Shortness of breath and chest tightness on hills—should I stop running?" }
-        ],
-        prior_conversation: [
-          { role: "user", text: "I feel chest discomfort when I push my runs harder." },
-          { role: "assistant", text: "Understood. Any dizziness, nausea, or pain radiating to arm/jaw?" },
-          { role: "user", text: "No dizziness or nausea, just tightness that eases with rest." }
-        ],
-        symptom_summary: "Exertional chest discomfort; resolves with rest; pending treadmill evaluation."
-      },
-      {
-        id: "demo-emma-davis",
-        name: "Emma Davis",
-        dob: "1997-06-21",
-        contact: { phone: "(555) 903-4410", email: "emma.davis@example.com" },
-        appointments: [
-          { id: "apt-ed-001", date: "2025-09-10", time: "11:45", type: "New patient intake", provider: "PA Nguyen", status: "scheduled", notes: "Routine physical; immunization review" }
-        ],
-        inquiries: [
-          { id: "inq-ed-001", date: "2025-09-04", subject: "What to bring", message: "Do I need fasting labs for my physical?" }
-        ],
-        prior_conversation: [
-          { role: "user", text: "Hi, I’m new. Just need a routine physical." },
-          { role: "assistant", text: "Welcome! Any current symptoms or concerns you’d like to note?" },
-          { role: "user", text: "No major concerns, just want to get established." }
-        ],
-        symptom_summary: "Asymptomatic; establishing care; routine physical planned."
-      }
-    ];
+        // -------- Seeded Demo Data (same three patients) --------
+        const PATIENTS = [
+            {
+                id: "demo-sarah-johnson",
+                name: "Sarah Johnson",
+                dob: "1990-04-12",
+                contact: { phone: "(555) 201-7364", email: "sarah.johnson@example.com" },
+                appointments: [
+                    { id: "apt-sj-001", date: "2025-09-05", time: "10:30", type: "Follow-up", provider: "Dr. Patel", status: "completed", notes: "Discussed recurring headaches" },
+                    { id: "apt-sj-002", date: "2025-09-12", time: "09:00", type: "Telehealth", provider: "NP Garcia", status: "scheduled", notes: "Check symptom trend" }
+                ],
+                inquiries: [
+                    { id: "inq-sj-001", date: "2025-09-03", subject: "Headache frequency", message: "Having mild headaches most mornings. Should I adjust caffeine?" },
+                    { id: "inq-sj-002", date: "2025-09-07", subject: "Medication question", message: "Is ibuprofen okay if I have to present at work?" }
+                ],
+                prior_conversation: [
+                    { role: "user", text: "I've had mild headaches for the past week." },
+                    { role: "assistant", text: "Thanks for sharing. Any fever or changes in appetite?" },
+                    { role: "user", text: "No fever, appetite is good. Mostly mornings, stress related maybe." }
+                ],
+                symptom_summary: "Mild morning headaches x7 days, no fever, good appetite; possible stress trigger."
+            },
+            {
+                id: "demo-michael-chen",
+                name: "Michael Chen",
+                dob: "1985-11-02",
+                contact: { phone: "(555) 414-2289", email: "michael.chen@example.com" },
+                appointments: [
+                    { id: "apt-mc-001", date: "2025-09-02", time: "16:15", type: "Urgent consult", provider: "Dr. Singh", status: "completed", notes: "Chest discomfort during exercise" },
+                    { id: "apt-mc-002", date: "2025-09-16", time: "14:00", type: "Cardio screening", provider: "Dr. Singh", status: "scheduled", notes: "Treadmill test; bring workout log" }
+                ],
+                inquiries: [
+                    { id: "inq-mc-001", date: "2025-09-01", subject: "Exercise pain", message: "Shortness of breath and chest tightness on hills—should I stop running?" }
+                ],
+                prior_conversation: [
+                    { role: "user", text: "I feel chest discomfort when I push my runs harder." },
+                    { role: "assistant", text: "Understood. Any dizziness, nausea, or pain radiating to arm/jaw?" },
+                    { role: "user", text: "No dizziness or nausea, just tightness that eases with rest." }
+                ],
+                symptom_summary: "Exertional chest discomfort; resolves with rest; pending treadmill evaluation."
+            },
+            {
+                id: "demo-emma-davis",
+                name: "Emma Davis",
+                dob: "1997-06-21",
+                contact: { phone: "(555) 903-4410", email: "emma.davis@example.com" },
+                appointments: [
+                    { id: "apt-ed-001", date: "2025-09-10", time: "11:45", type: "New patient intake", provider: "PA Nguyen", status: "scheduled", notes: "Routine physical; immunization review" }
+                ],
+                inquiries: [
+                    { id: "inq-ed-001", date: "2025-09-04", subject: "What to bring", message: "Do I need fasting labs for my physical?" }
+                ],
+                prior_conversation: [
+                    { role: "user", text: "Hi, I’m new. Just need a routine physical." },
+                    { role: "assistant", text: "Welcome! Any current symptoms or concerns you’d like to note?" },
+                    { role: "user", text: "No major concerns, just want to get established." }
+                ],
+                symptom_summary: "Asymptomatic; establishing care; routine physical planned."
+            }
+        ];
 
-    const FOCUSED = focusPatient
-      ? PATIENTS.filter(p => p.name.toLowerCase() === focusPatient.toLowerCase())
-      : PATIENTS;
+        const FOCUSED = focusPatient
+            ? PATIENTS.filter(p => p.name.toLowerCase() === focusPatient.toLowerCase())
+            : PATIENTS;
 
-    // -------------------- System Instructions --------------------
-    // Keep the friendly voice but make the agent immediately aware of these demo charts.
-    const instructions = `
-You are a helpful, friendly clinic voice assistant. Speak naturally, one idea per sentence.
+        // -------- Instruction block with client requirements + simulation protocol --------
+        const instructions = `
+You are a professional AI voice assistant for a medical practice.
+Always speak in a clear, calm, empathetic, and professional tone.
+You are the AI Voice Agent for ${clinicName} named "${agentName}".
+Today’s mode: ${mode}.
 
 Seeded demo patient data (JSON):
 ${JSON.stringify(FOCUSED, null, 2)}
 
-Behavior:
-- Treat this list as the clinic's current working context for demo purposes.
-- If the user mentions Sarah Johnson, Michael Chen, or Emma Davis, use ONLY the seeded data above.
-- Do not invent details beyond this data. If unsure, say what is known from the data.
-- Be concise. Confirm key facts before acting. Never provide diagnosis or treatment.
-- If asked, you may summarize a patient's recent symptoms, upcoming appointments, or latest inquiries using dates.
-- When scheduling or replying to inquiries in this demo, simulate the action and confirm verbally (no real changes occur).
+PRIMARY TASKS
+- Schedule appointments (check availability, confirm times).
+- Make phone calls (introduce yourself, state purpose, confirm details).
+- Send reminders (via text/email, short and clear).
+- Summarize interactions (concise notes for staff/doctor).
+- Always confirm actions before finalizing.
+- Never provide medical advice. If clinical questions arise, say: "I will forward this request to your provider."
+- If unsure, politely say you’ll forward the request to staff.
 
-Greet the user briefly. Then be ready to answer about these patients or general clinic tasks.
+CONVERSATION FLOW RULES
+1) Greeting:
+   - Say: "Hello, this is the automated assistant for ${clinicName}. How may I help you today?"
+2) Appointment Scheduling:
+   - Ask for name, DOB, and reason for visit.
+   - Confirm provider availability (simulate).
+   - Respond: "I’ve scheduled you with Dr. [Name] on [Date/Time]. You’ll receive a confirmation by text/email."
+3) Phone Call Handling:
+   - Outbound: "Hi, this is ${agentName}, calling on behalf of ${clinicName}. I’d like to confirm your appointment for [Date/Time]. Is that still good for you?"
+   - Inbound: "I can help you schedule, confirm, or reschedule appointments. What would you like to do?"
+4) Text / Email Reminder Templates:
+   - EMAIL SUBJECT: "Appointment Confirmation – ${clinicName}"
+   - EMAIL/TEXT BODY: "Hello [First Name], your appointment with Dr. [Name] is scheduled for [Date/Time] at ${clinicLocation}. Reply YES to confirm or call us at ${clinicPhone} to reschedule."
+5) Staff Summarization Example:
+   - Patient: Jane Doe
+   - Call Date: Sept 10, 2025
+   - Reason: Reschedule annual checkup
+   - Action: Appointment moved from Sept 12 → Sept 19, 10 AM
+   - Next step: Send confirmation email
+
+MODES
+1) SIMULATION MODE (for provider testing):
+   - Make it explicit that you are SIMULATING when asked about the process.
+   - Walk the full intake workflow: greeting → info collection → scheduling → reminder → summary.
+   - Always log the interaction as if a real patient call occurred.
+2) WORKFLOW MODE (for provider operations):
+   - Accept direct commands (a: Call a patient, b: Send reminder, c: Summarize interactions, d: Escalate to staff).
+   - Always confirm before executing.
+   - Always generate a structured summary for CRM records.
+
+ACTION SIMULATION PROTOCOL
+- For any requested action (book/reschedule, phone call, send reminder, summarize, escalate):
+  1) Confirm details with the user.
+  2) Respond with a short natural-language confirmation.
+  3) Emit an ACTION_LOG JSON block for CRM:
+     {
+       "action": "schedule_appointment" | "confirm_appointment" | "reschedule_appointment" | "send_reminder" | "outbound_call" | "inbound_call" | "summarize" | "escalate",
+       "mode": "${mode}",
+       "patient": { "name": "...", "dob": "...", "id": "..." },
+       "provider": "Dr. ...",
+       "date": "YYYY-MM-DD",
+       "time": "HH:mm",
+       "channel": "phone|text|email|voice",
+       "notes": "short status or outcome",
+       "next_step": "what the clinic should do next",
+       "timestamp": "<ISO8601>"
+     }
+  4) Also output a STAFF_SUMMARY section (3–6 bullets, include dates).
+- Do not claim to have sent actual messages or changed the real calendar. Use language like "I have simulated..." in SIMULATION mode. In WORKFLOW mode, use "I will proceed to..." after confirmation.
+
+SAFETY
+- Never provide medical advice or diagnosis.
+- If clinical guidance is requested, say: "I will forward this request to your provider."
+
+QUICK RESPONSES
+- If user says "I need an appointment":
+  -> Ask for name, DOB, reason.
+  -> Simulate checking schedule.
+  -> Confirm date/time.
+  -> Voice: "I’ve booked your appointment for [date/time]. You’ll get a confirmation shortly."
+  -> Trigger simulated reminder (use the template).
+  -> Log ACTION_LOG and STAFF_SUMMARY.
+
+GREET BRIEFLY and be ready to help with these patients or general clinic tasks.
     `.trim();
 
-    // -------------------- Create Realtime session --------------------
-    const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-realtime-preview-2024-12-17",
-        modalities: ["text", "audio"],
-        voice,
-        instructions,
-        input_audio_transcription: { model: "whisper-1" },
-        turn_detection: {
-          type: "server_vad",
-          threshold: 0.5,
-          prefix_padding_ms: 500,
-          silence_duration_ms: 500
-        },
-        temperature: 0.7,
-        max_response_output_tokens: 768
-      }),
-    });
+        // -------- Create Realtime session --------
+        const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-realtime-preview-2024-12-17",
+                modalities: ["text", "audio"],
+                voice,
+                instructions,
+                input_audio_transcription: { model: "whisper-1" },
+                turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 500, silence_duration_ms: 500 },
+                temperature: 0.7,
+                max_response_output_tokens: 900
+            }),
+        });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI Voice Agent API error:", errorText);
-      return res.status(response.status).json({
-        error: "Failed to create session",
-        details: errorText
-      });
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("OpenAI Voice Agent API error:", errorText);
+            return res.status(response.status).json({ error: "Failed to create session", details: errorText });
+        }
+
+        const data = await response.json();
+        res.json(data);
+    } catch (err) {
+        console.error("voice-agent/token error", err);
+        res.status(500).json({ error: "Failed to generate voice agent token", details: err.message });
     }
-
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    console.error("voice-agent/token error", err);
-    res.status(500).json({ error: "Failed to generate voice agent token", details: err.message });
-  }
 });
+
 
 
 
