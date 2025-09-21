@@ -396,7 +396,7 @@ SAFETY
 
 QUICK RESPONSES
 - If user says "I need an appointment":
-  -> Ask for name, DOB, reason.
+  -> Ask for name, reason.
   -> Simulate checking schedule.
   -> Confirm date/time.
   -> Voice: "I’ve booked your appointment for [date/time]. You’ll get a confirmation shortly."
