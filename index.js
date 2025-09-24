@@ -11,6 +11,7 @@ import patientRoutes from './routes/patient.route.js';
 import providerRoutes from './routes/provider.route.js';
 import voiceAgentRoutes from './routes/voice-agent.route.js';
 import conversationRoutes from "./routes/conversation.route.js";
+import sheetRoutes from "./routes/integrations.sheets.route.js";
 
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
@@ -235,6 +236,7 @@ app.use('/api/patient', patientRoutes);
 app.use('/api/provider', providerRoutes);
 app.use('/api/voice-agent', voiceAgentRoutes);
 app.use("/api/conversations", conversationRoutes);
+app.use("/api/sheets", sheetRoutes);
 
 // Error handling
 app.use((error, req, res, next) => {
