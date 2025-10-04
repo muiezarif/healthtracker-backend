@@ -78,4 +78,75 @@ router.post("/integrations/sheets/lead", async (req, res) => {
   }
 });
 
+// --- NOVAM Sheets Integration: Save Lead (Simplified) ---
+// Env required:
+//   GOOGLE_CLIENT_EMAIL=...@gserviceaccount.com
+//   GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+//   SALES_SHEET_NOVAM_ID=1AbcDEFghiJKLmnOPQRstuVWxyz12345
+// Optional:
+//   SALES_SHEET_NOVAM_TAB=Leads
+router.post("/integrations-novam/sheets/lead", async (req, res) => {
+  try {
+    const {
+      consent,
+      lead = {},   // { name, email, company }
+      meta = {},   // { agentMode, agentName, timestamp }
+    } = req.body || {};
+
+    if (!consent) {
+      return res.status(400).json({ error: "Consent is required before saving." });
+    }
+
+    const fullName = lead.name || "";
+    const email = lead.email || "";
+    const company = lead.company || "";
+
+    if (!fullName || !email || !company) {
+      return res.status(400).json({ error: "Missing required lead fields: name, email, or company." });
+    }
+
+    const agentMode = meta.agentMode || "";
+    const agentName = meta.agentName || "";
+    const timestamp = meta.timestamp || new Date().toISOString();
+
+    // --- Sheets setup ---
+    const sheets = getSheetsClient();
+    const spreadsheetId = process.env.SALES_SHEET_NOVAM_ID;
+    const tab = process.env.SALES_SHEET_NOVAM_TAB || "NovamLeads";
+
+    if (!spreadsheetId) {
+      return res.status(500).json({ error: "SALES_SHEET_NOVAM_ID env is missing" });
+    }
+
+    // Row format:
+    // A: Timestamp | B: Full Name | C: Email | D: Company | E: Agent Mode | F: Agent Name | G: Source
+    const values = [[
+      timestamp,
+      fullName,
+      email,
+      company,
+      agentMode,
+      agentName,
+      "Novam",
+    ]];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `${tab}!A1`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values },
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Novam Sheets append error:", err);
+    res.status(500).json({
+      error: "Failed to append to Novam Google Sheet",
+      details: err.message,
+    });
+  }
+});
+
+
+
 export default router;
